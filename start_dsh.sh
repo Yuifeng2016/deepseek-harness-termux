@@ -99,8 +99,12 @@ open_browser() {
     # 必须显式用 node 启动，不要写成 node_modules/.bin/dsh：
     # 那个 shim 的 shebang 是 #!/usr/bin/env node，而 Termux 上没有 /usr/bin/env，
     # widget 背景任务里没有 termux-exec 的 LD_PRELOAD 兜底，会直接报 bad interpreter。
+    #
+    # --expose-internals：0.1.7 起运行时解析无条件走 node-addon-require-builtin，
+    # 该原生绑定没有 android-arm64 版；android-fix.mjs 已把它桩化成普通 require，
+    # 普通 require 只有带这个 flag 才能解析 internal/ 模块（见补丁 16）。
     : > "$SERVER_LOG"
-    setsid nohup node "$DSH_DIR/node_modules/@deepseek-ai/dsh/lib/bin.js" web --no-open --port "$PORT" \
+    setsid nohup node --expose-internals "$DSH_DIR/node_modules/@deepseek-ai/dsh/lib/bin.js" web --no-open --port "$PORT" \
         >> "$SERVER_LOG" 2>&1 < /dev/null &
     disown 2>/dev/null || true
 

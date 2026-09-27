@@ -18,3 +18,6 @@ android-app/out/
 android-app/tools/android.jar
 android-app/tools/icon-preview.png
 android-app/keystore.jks
+
+# The workspace install pulls its own deps here (android-app build tooling).
+node_modules/

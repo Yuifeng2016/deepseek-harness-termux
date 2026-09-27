@@ -4,9 +4,9 @@ English | [中文](README.zh.md)
 
 Compatibility patches plus a one-tap launcher that get [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) running on **Android / Termux**.
 
-dsh officially supports Linux, macOS and Windows. Android (Termux, bionic libc) is missing several prerequisites it assumes, so `npx @deepseek-ai/dsh web` from the official README **will not start** on a phone. This repository collects the **17 patches** that are verified to work on a real device into one idempotent script (`android-fix.mjs`), provides launch steps you can copy directly, and ships a **locally built Android shell app** — it starts the server, and adds a floating status bubble, a notification island, a file picker, and a restart button in the settings page.
+dsh officially supports Linux, macOS and Windows. Android (Termux, bionic libc) is missing several prerequisites it assumes, so `npx @deepseek-ai/dsh web` from the official README **will not start** on a phone. This repository collects the **18 patches** that are verified to work on a real device into one idempotent script (`android-fix.mjs`), provides launch steps you can copy directly, and ships a **locally built Android shell app** — it starts the server, and adds a floating status bubble, a notification island, a file picker, and a restart button in the settings page.
 
-Most of the patches are Android platform gaps; patch 9 is a performance tweak; patches 10–15 come from `0.1.6-alpha.2` and its new plugin page; patch 16 repairs the global `node-gyp`, which only matters for plugins that compile native code on the device; patch 17 repairs plugin bundles that reference an icon this dsh no longer ships.
+Most of the patches are Android platform gaps; patch 9 is a performance tweak; patches 10–15 come from `0.1.6-alpha.2` and its new plugin page; patch 16 repairs the global `node-gyp`, which only matters for plugins that compile native code on the device; patch 17 repairs plugin bundles that reference an icon this dsh no longer ships; patch 18 covers `0.1.7`, whose unconditional runtime resolution needs the android-less native addon stubbed and the launchers to pass `--expose-internals`.
 
 ## Table of contents
 
@@ -241,6 +241,14 @@ In other words, this device has only two states — "no sandbox" and "cannot run
 | 10 | Boot: `host preparation failed: No usable native binding found for node-addon-require-builtin-android-arm64` | restore `resolutionMode`'s default from `runtime` back to `link` in `profile-boot-<hash>.js` |
 | 11 | Boot: `--expose-internals is required for HMR service` | drop the hard-coded `dsh-hmr` entry from `dsh-base/cordis.patch.yml` |
 
+**New in `0.1.7`** (18 — skip it and **boot fails outright**):
+
+| # | Symptom | Fix |
+|---|---|---|
+| 18 | Boot: the same `No usable native binding found for node-addon-require-builtin-android-arm64` as patch 10 | 0.1.7 made the runtime resolution unconditional (the `link` fallback is gone, so patch 10's anchor no longer exists). Stub `node-addon-require-builtin` to plain require and have the launchers pass `--expose-internals` (workers inherit it) |
+
+Patch 18 requires all three launchers (`start_dsh.sh`, `start_dsh-terminal.sh`, `ensure-server.mjs`) to pass `--expose-internals`. **Update this repository's copies before upgrading dsh** (re-run `install.sh` or sync manually), otherwise the new patch reports `Cannot find module 'internal/…'`.
+
 **UI, plugins and toolchain** (12–17):
 
 | # | Symptom | Fix |
@@ -254,7 +262,7 @@ In other words, this device has only two states — "no sandbox" and "cannot run
 
 The reasoning, the trade-offs and the traps are written up in the comments of `android-fix.mjs`. To check whether the patches are in place: `grep -rl ANDROID_ node_modules`.
 
-**Patches 10 and 11 are worth remembering separately**: they are what `0.1.6-alpha.2` introduced relative to `alpha.1`, and without them nothing boots at all. The root cause of 10 is upstream wiring a **platform-specific native dependency** into the boot path every platform takes, for a package that has never shipped an `android-arm64` build. Patch 15 is patch 10's side effect: `link` mode also turns off the profile-plugin resolution route.
+**Patches 10, 11 and 18 are worth remembering separately**: 10 is what `0.1.6-alpha.2` introduced relative to `alpha.1` — upstream wired a **platform-specific native dependency** into the boot path every platform takes, for a package that has never shipped an `android-arm64` build. 0.1.7 made that path unconditional (patch 10's anchor disappeared; 18 took over). Patch 15 is patch 10's side effect: `link` mode also turns off the profile-plugin resolution route. Since 0.1.7, patch 9's cache is skipped with a warning — upstream made combo script bodies lazy, which solves the same cold-start cost upstream; ignore it.
 
 ## Installing plugins
 
@@ -299,17 +307,17 @@ When you launch through this repository's `start_dsh.sh`, that step happens auto
 
 ### Which version to install
 
-**`0.1.6-alpha.2` is recommended** (the newest release verified to work here):
+**`0.1.7-rc.2` is recommended** (the newest release verified to work here as of 2026-09-27 — all patches pass, smoke boot passes):
 
 ```sh
 cd ~/dsh
-npm install @deepseek-ai/dsh@0.1.6-alpha.2
-node ~/dsh/android-fix.mjs     # required: without patches 10 and 11 it will not boot
+npm install @deepseek-ai/dsh@0.1.7-rc.2
+node ~/dsh/android-fix.mjs     # required: without patches 10, 11 and 18 it will not boot
 ```
 
-Note that npm's `latest` tag still points at `0.1.5-rc.2`, so name the version explicitly — a bare `npm install @deepseek-ai/dsh` will not get you this release.
+Note that npm's `latest` tag still points at `0.1.5-rc.3` (the stable channel; the new series rides the `next` tag), so name the version explicitly — a bare `npm install @deepseek-ai/dsh` will not get you this release.
 
-`0.1.6-alpha.2` adds two **boot-blocking** problems over `alpha.1` (patches 10 and 11). Both are handled in `android-fix.mjs`; patch it and it runs. Verified on this device.
+`0.1.7` changes one architectural thing relative to `0.1.5`/`0.1.6`: the runtime resolution no longer has a `link` fallback (see patch 18). **Update this repository's launchers before upgrading dsh** — doing it in the other order leaves you with a server that will not start.
 
 ### On pinning versions
 

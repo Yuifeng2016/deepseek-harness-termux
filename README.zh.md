@@ -4,9 +4,9 @@
 
 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）在 **Android / Termux** 上跑起来的兼容补丁 + 一键启动脚本。
 
-dsh 官方支持 Linux / macOS / Windows。安卓（Termux，bionic libc）缺了几个它默认依赖的前提，所以官方 README 里的 `npx @deepseek-ai/dsh web` 在手机上**起不来**。本仓库把实测可行的 **17 处**修补收敛到一个幂等脚本（`android-fix.mjs`）里，给出了可直接复制的启动步骤，另外附带一个**本地自编译的 Android 外壳 App**——有启动服务、悬浮状态气泡、通知岛、文件选择器，以及设置页里的重启按钮。
+dsh 官方支持 Linux / macOS / Windows。安卓（Termux，bionic libc）缺了几个它默认依赖的前提，所以官方 README 里的 `npx @deepseek-ai/dsh web` 在手机上**起不来**。本仓库把实测可行的 **18 处**修补收敛到一个幂等脚本（`android-fix.mjs`）里，给出了可直接复制的启动步骤，另外附带一个**本地自编译的 Android 外壳 App**——有启动服务、悬浮状态气泡、通知岛、文件选择器，以及设置页里的重启按钮。
 
-其中大多数补丁是安卓平台差异；第 9 条是性能优化；第 10–15 条是 `0.1.6-alpha.2` 和它的新插件页带来的；第 16 条修的是全局 `node-gyp`，只有装需要现场编译的原生插件时才会用到；第 17 条修的是插件引用了此版 dsh 已不再提供的图标。
+其中大多数补丁是安卓平台差异；第 9 条是性能优化；第 10–15 条是 `0.1.6-alpha.2` 和它的新插件页带来的；第 16 条修的是全局 `node-gyp`，只有装需要现场编译的原生插件时才会用到；第 17 条修的是插件引用了此版 dsh 已不再提供的图标；第 18 条是 `0.1.7` 带来的——运行时解析改成无条件后，需要把安卓缺失的原生 addon 桩化并让启动器带上 `--expose-internals`。
 
 ## 目录
 
@@ -210,7 +210,7 @@ this host; refusing to run the command unconfined.
 
 ## 补丁清单
 
-共 17 条，编号与 `android-fix.mjs` 里的注释一致。
+共 18 条，编号与 `android-fix.mjs` 里的注释一致。
 
 **Android 平台差异**（1–8）：
 
@@ -238,6 +238,14 @@ this host; refusing to run the command unconfined.
 | 10 | 启动崩：`host preparation failed: No usable native binding found for node-addon-require-builtin-android-arm64` | `profile-boot-<hash>.js` 的 `resolutionMode` 默认值由 `runtime` 改回 `link` |
 | 11 | 启动崩：`--expose-internals is required for HMR service` | 从 `dsh-base/cordis.patch.yml` 移除硬编码的 `dsh-hmr` 条目 |
 
+**`0.1.7` 上新增**（18，不补则**启动即崩**）：
+
+| # | 现象 | 处理 |
+|---|---|---|
+| 18 | 启动崩：同第 10 条的 `No usable native binding found for node-addon-require-builtin-android-arm64` | 0.1.7 把运行时解析改成无条件（`link` 回退没了，第 10 条的锚点也随之消失）。把 `node-addon-require-builtin` 桩化成普通 require，并让启动器以 `--expose-internals` 启动（worker 会继承） |
+
+第 18 条要求三个启动器（`start_dsh.sh`、`start_dsh-terminal.sh`、`ensure-server.mjs`）都带上 `--expose-internals`。**升级 dsh 前先更新本仓库副本**（重跑 `install.sh` 或手动同步），否则新补丁生效后会报 `Cannot find module 'internal/…'`。
+
 **界面、插件与工具链**（12–17）：
 
 | # | 现象 | 处理 |
@@ -251,7 +259,7 @@ this host; refusing to run the command unconfined.
 
 原因、取舍与踩过的坑都写在 `android-fix.mjs` 的注释里。判断补丁在不在：`grep -rl ANDROID_ node_modules`。
 
-**第 10、11 条值得单独记住**：它们是 `0.1.6-alpha.2` 相对 `alpha.1` 引入的，不补就完全起不来。第 10 条的根因是上游把一个**平台特定的原生依赖**接进了所有平台的启动必经路径，而那个包从没发布过 `android-arm64`。第 15 条是第 10 条的副作用：`link` 模式同时关掉了 profile 插件的解析路由。
+**第 10、11、18 条值得单独记住**：第 10 条是 `0.1.6-alpha.2` 相对 `alpha.1` 引入的，根因是上游把一个**平台特定的原生依赖**接进了所有平台的启动必经路径，而那个包从没发布过 `android-arm64`；0.1.7 又把运行时解析改成无条件（第 10 条的锚点随之消失，由第 18 条接手）。第 15 条是第 10 条的副作用：`link` 模式同时关掉了 profile 插件的解析路由。0.1.7 起第 9 条的缓存补丁会因锚点变化被跳过（只警告不拦截）——上游把组合脚本改成了惰性构建，冷启动开销已在上游解决，这条可以无视。
 
 ## 装插件
 
@@ -296,17 +304,17 @@ node ~/dsh/android-fix.mjs
 
 ### 装哪个版本
 
-**推荐 `0.1.6-alpha.2`**（当前实测可用的最新版）：
+**推荐 `0.1.7-rc.2`**（截至 2026-09-27 实测可用，本机补丁全过、冒烟启动通过）：
 
 ```sh
 cd ~/dsh
-npm install @deepseek-ai/dsh@0.1.6-alpha.2
-node ~/dsh/android-fix.mjs     # 必需：第 10、11 条补丁不跑就起不来
+npm install @deepseek-ai/dsh@0.1.7-rc.2
+node ~/dsh/android-fix.mjs     # 必需：第 10、11、18 条补丁不跑就起不来
 ```
 
-注意 npm 的 `latest` 标签仍停在 `0.1.5-rc.2`，所以要**显式写版本号**，直接 `npm install @deepseek-ai/dsh` 装不到它。
+注意 npm 的 `latest` 标签停在 `0.1.5-rc.3`（正式通道），新系列走 `next` 标签，所以要**显式写版本号**，直接 `npm install @deepseek-ai/dsh` 装不到它。
 
-`0.1.6-alpha.2` 比 `alpha.1` 多两个**启动即崩**的问题（见补丁 10、11），都已在 `android-fix.mjs` 里处理。补完就能正常跑——本机实测通过。
+`0.1.7` 相对 `0.1.5/0.1.6` 有一处架构变化：运行时解析不再有 `link` 回退（见补丁 18）。**先更新本仓库的启动器再升级 dsh**，顺序反了会起不来。
 
 ### 关于版本固定
 
@@ -321,7 +329,7 @@ node ~/dsh/android-fix.mjs
 
 保留 `package-lock.json`：是它把整棵树钉住的。真出问题就用 `npm ci` 恢复。
 
-当前 `~/dsh/package.json` 里 `@deepseek-ai/dsh` 写的是**精确版本**（没有脱字符），所以不会在你没操作时被升上去。
+`install.sh` 写进 `~/dsh/package.json` 的是**脱字符范围**（如 `^0.1.5-rc.3`）。按 semver 的预发布规则，这样的范围不会自动跨到更高小版本的预发布（`^0.1.5-rc.3` 不会自己吃到 `0.1.7-rc.2`），所以放着不升级是安全的；想升就按上一节的显式版本号来。要更严格可以把范围手动改成精确版本（去掉脱字符），升级操作不变。
 
 ### 依赖树布局
 

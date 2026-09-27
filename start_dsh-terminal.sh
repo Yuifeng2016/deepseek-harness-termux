@@ -34,4 +34,7 @@ fi
 # 而 Termux 上并不存在 /usr/bin/env。交互式 shell 里因为 termux-exec 的
 # LD_PRELOAD 会改写 shebang 而侥幸能跑，但 Termux:Widget 拉起的新会话没有它，
 # 会直接报 "/usr/bin/env: bad interpreter: No such file or directory"。
-exec node "$DSH_DIR/node_modules/@deepseek-ai/dsh/lib/bin.js" web
+# --expose-internals：0.1.7 起运行时解析无条件走 node-addon-require-builtin，
+# 该原生绑定没有 android-arm64 版；android-fix.mjs 已把它桩化成普通 require，
+# 普通 require 只有带这个 flag 才能解析 internal/ 模块（见补丁 16）。
+exec node --expose-internals "$DSH_DIR/node_modules/@deepseek-ai/dsh/lib/bin.js" web

@@ -552,8 +552,12 @@ if (resolutionPatched > 0) {
 } else if (profileBootFiles.some((name) => readFileSync(join(profileBootDir, name), 'utf8').includes(LINK_DEFAULT))) {
   // already patched
 } else {
-  // Pre-alpha.2 releases default to "link" already; nothing to do.
-  console.log('profile resolution: default already link; nothing to patch')
+  // Pre-alpha.2 releases default to "link" without naming the option, and
+  // 0.1.7+ removed the mode switch entirely (runtime interception is
+  // unconditional — patch 16 covers what boot needs then). Neither anchor
+  // being present can mean either, so stay non-fatal but say what was found
+  // instead of claiming "already link".
+  console.warn('profile resolution: no resolutionMode default found in profile-boot chunks (pre-0.1.6 release, or 0.1.7+ where the switch is gone)')
 }
 
 // 11. HMR service. 0.1.6-alpha.2 hard-codes @deepseek-ai/dsh-hmr into
@@ -597,6 +601,56 @@ if (existsSync(basePatchPath)) {
 } else {
   // Pre-alpha.2 releases shipped no such patch file; nothing to remove.
   console.log(`hmr: ${basePatchPath} absent; nothing to patch`)
+}
+
+// 18. Internal access on Android. dsh-app-boot's runtime package resolution
+// requires node-addon-require-builtin, whose native binding is published for
+// darwin/linux/win32 only — there is no android-arm64 optional package and no
+// published source to compile. Through 0.1.6 the "link" resolution default
+// (patch 10) kept the addon off the boot path, but 0.1.7 made the runtime
+// interception unconditional: `createRuntimeResolution` runs on every boot and
+// `PluginPackages` always receives a resolution, so the require sits on the
+// boot path and boot dies with
+// `host preparation failed: No usable native binding found for
+//  node-addon-require-builtin-android-arm64`.
+//
+// The addon's JS surface is tiny and its only real capability is requiring
+// Node *internal* modules (`requireBuiltin` forwards any id to Node's builtin
+// require). `--expose-internals` grants plain require exactly that — dsh's own
+// cordis-plugin-loader already prefers the flag for the same purpose. So on
+// Android the addon's entry is stubbed to forward to plain require, and the
+// launchers pass `--expose-internals` (worker threads inherit execArgv).
+// The stub must not fake success on other platforms: there it does nothing.
+const addonEntryPath = join(nodeModules, 'node-addon-require-builtin', 'lib', 'index.js')
+const EXPOSE_STUB_MARKER = 'ANDROID_STUB_EXPOSE'
+if (process.platform === 'android') {
+  if (!existsSync(addonEntryPath)) {
+    problems.push(`internal access: ${addonEntryPath} missing`)
+  } else if (!readFileSync(addonEntryPath, 'utf8').includes(EXPOSE_STUB_MARKER)) {
+    // The published entry is a 30-line CJS shim (exports.requireBuiltin → the
+    // native api). Rebuild it: on android forward to plain require — which only
+    // resolves internal ids when the process runs with --expose-internals, so a
+    // launch that forgets the flag fails loudly with "Cannot find module
+    // 'internal/…'" instead of pretending to work.
+    writeFileSync(
+      addonEntryPath,
+      `/* ${EXPOSE_STUB_MARKER}: no android-arm64 native binding exists for this addon. Its
+ * only capability — requiring Node internal modules — is available to plain
+ * require under --expose-internals, which the dsh launchers pass. */
+"use strict";
+if (process.platform === "android") {
+	exports.requireBuiltin = function requireBuiltin(moduleId) { return require(moduleId); };
+	exports.isAllowedInternalId = function isAllowedInternalId() { return true; };
+	exports.getBindingInfo = function getBindingInfo() { return { stub: "${EXPOSE_STUB_MARKER}" }; };
+	module.exports.default = module.exports;
+} else {
+/* unmodified published entry for every other platform */
+${readFileSync(addonEntryPath, 'utf8')}
+}
+`,
+    )
+    console.log('internal access: node-addon-require-builtin stubbed to plain require (--expose-internals)')
+  }
 }
 
 // 12. Sidebar panel toggle. 0.1.6-alpha.2 added the Plugins entry to the sidebar

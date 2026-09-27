@@ -149,7 +149,11 @@ function startServer() {
   // this bridge command finishes.
   const child = spawn(
     process.execPath,
-    [ENTRY, 'web', '--no-open', '--port', String(PORT)],
+    // --expose-internals: since 0.1.7 the runtime resolution unconditionally
+    // goes through node-addon-require-builtin, which has no android-arm64
+    // native binding; android-fix.mjs stubs it to plain require, and plain
+    // require only resolves internal/ modules with this flag (patch 16).
+    ['--expose-internals', ENTRY, 'web', '--no-open', '--port', String(PORT)],
     {
       cwd: HOME,
       detached: true,
