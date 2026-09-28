@@ -159,6 +159,14 @@ mkdir -p "$prebuilt_dir"
 cp "$out/dsh.apk" "$prebuilt_dir/dsh.apk"
 echo "prebuilt -> $prebuilt_dir/dsh.apk ($(wc -c <"$prebuilt_dir/dsh.apk") bytes, gitignored; publish via GitHub Release)"
 
+# 用户要求（2026-09-28）：构建产物统一放 /sdcard/upload/。经 rish 分块推送并做 sha 校验。
+if command -v "$HOME/.rish/rish" >/dev/null 2>&1; then
+    bash "$root/tools/publish-apk.sh" "$out/dsh.apk" "/sdcard/upload/dsh.apk" \
+        || echo "publish: 副本推送失败（不影响构建产物），可手动重跑 tools/publish-apk.sh"
+else
+    echo "publish: 跳过（未找到 rish）。需要时手动跑：bash tools/publish-apk.sh"
+fi
+
 ls -la "$out/dsh.apk"
 echo "OK -> $out/dsh.apk"
 
