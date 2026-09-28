@@ -82,6 +82,10 @@ public class MainActivity extends Activity {
     private Button restartButton;
     /** Failure-page escape hatch into the setup wizard (ambiguous failure states only). */
     private Button setupButton;
+    /** Skips the boot chain and loads the web UI as-is (server may already be running). */
+    private Button directButton;
+    /** Opens BASE_URL in the system browser instead of the in-app WebView. */
+    private Button browserButton;
     /** First-run / repair guide; only ever shown on failure paths. */
     private SetupWizard wizard;
     private ScrollView wizardView;
@@ -818,6 +822,8 @@ public class MainActivity extends Activity {
                         + "点「重新登录」重启它（会打断正在进行的对话）。", false);
                 retryButton.setVisibility(View.GONE);
                 setupButton.setVisibility(View.GONE);
+                directButton.setVisibility(View.GONE);
+                browserButton.setVisibility(View.GONE);
             }
         });
     }
@@ -949,6 +955,42 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.WRAP_CONTENT);
         setupParams.topMargin = dp(8);
         splash.addView(setupButton, setupParams);
+
+        directButton = new Button(this);
+        directButton.setText("直接打开 Web 页面");
+        directButton.setAllCaps(false);
+        directButton.setVisibility(View.GONE);
+        directButton.setTypeface(Typeface.DEFAULT);
+        directButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openWebDirectly();
+            }
+        });
+        LinearLayout.LayoutParams directParams =
+                new LinearLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.WRAP_CONTENT);
+        directParams.topMargin = dp(8);
+        splash.addView(directButton, directParams);
+
+        browserButton = new Button(this);
+        browserButton.setText("用浏览器打开");
+        browserButton.setAllCaps(false);
+        browserButton.setVisibility(View.GONE);
+        browserButton.setTypeface(Typeface.DEFAULT);
+        browserButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BASE_URL)));
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "没有可用的浏览器", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        LinearLayout.LayoutParams browserParams =
+                new LinearLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.WRAP_CONTENT);
+        browserParams.topMargin = dp(8);
+        splash.addView(browserButton, browserParams);
 
         wizard = new SetupWizard(this, wizardHost());
         wizardView = (ScrollView) wizard.view();
@@ -1247,9 +1289,26 @@ public class MainActivity extends Activity {
         // The "open Termux" escape hatch only makes sense when we could not reach Termux.
         termuxButton.setVisibility(!busy && bridgeDispatchFailed ? View.VISIBLE : View.GONE);
         setupButton.setVisibility(busy ? View.GONE : View.VISIBLE);
+        // The direct-web entries stay available in every splash state (busy or failed):
+        // they are the way in when the server is already up, and a diagnostic window
+        // when the boot chain misbehaves.
+        directButton.setVisibility(View.VISIBLE);
+        browserButton.setVisibility(View.VISIBLE);
         if (wizardView != null) wizardView.setVisibility(View.GONE);
         splash.setVisibility(View.VISIBLE);
         splash.bringToFront();
+    }
+
+    /**
+     * Skip the boot chain and load the web UI as-is. Useful when the server is already
+     * running (no need for the bridge round-trip), and as a diagnostic: the page itself
+     * shows what the server has to say instead of our spinner.
+     */
+    private void openWebDirectly() {
+        bootGeneration++;                    // drop any boot attempt in flight
+        pendingStep3 = false;                // a direct open is not a wizard completion
+        if (wizardView != null) wizardView.setVisibility(View.GONE);
+        loadInWeb(BASE_URL + "/", bootGeneration);
     }
 
     private void hideSplash() {
