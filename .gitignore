@@ -19,5 +19,16 @@ android-app/tools/android.jar
 android-app/tools/icon-preview.png
 android-app/keystore.jks
 
+# The bundled Termux APK (114 MB): tools/build.sh fetches it once into tools/cache/
+# (mirror first) and copies it into assets/ at link time. Never tracked.
+android-app/tools/cache/
+android-app/assets/termux.apk
+# Same story for the built artifact: ~114MB exceeds GitHub's 100MB file limit, so the
+# installable APK is distributed as a GitHub Release asset instead of a tracked file.
+android-app/prebuilt/dsh.apk
+
 # The workspace install pulls its own deps here (android-app build tooling).
 node_modules/
+
+# bootstrap.sh leaves its install log next to the repo when run from the clone.
+bootstrap-install.log

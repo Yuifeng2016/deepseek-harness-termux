@@ -9,7 +9,7 @@
 #   bash phone-use/install.sh --id phoneuse      # 指定 preset id
 #   bash phone-use/install.sh --check            # 只检查环境，不写任何文件
 #
-# 仓库：https://github.com/mermergi/deepseek-harness-termux
+# 仓库：https://github.com/Yuifeng2016/deepseek-harness-termux
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

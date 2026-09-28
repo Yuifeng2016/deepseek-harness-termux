@@ -28,6 +28,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -79,6 +80,13 @@ public class MainActivity extends Activity {
     private Button retryButton;
     private Button termuxButton;
     private Button restartButton;
+    /** Failure-page escape hatch into the setup wizard (ambiguous failure states only). */
+    private Button setupButton;
+    /** First-run / repair guide; only ever shown on failure paths. */
+    private SetupWizard wizard;
+    private ScrollView wizardView;
+    /** Set when the wizard's recheck comes from step 2: the next successful load shows step 3. */
+    private boolean pendingStep3;
 
     private android.webkit.ValueCallback<Uri[]> pendingFileChooser;
     /** True from the moment a picker is launched until its result is handled. */
@@ -604,6 +612,13 @@ public class MainActivity extends Activity {
                 return;
             }
         }
+        if (intent != null && intent.getBooleanExtra("force_setup", false)) {
+            // Test hook (rish am start --ez force_setup true) and a manual escape hatch:
+            // walk the wizard regardless of the detected state.
+            bootGeneration++;
+            showWizardStep1(null);
+            return;
+        }
         beginBoot();
     }
 
@@ -751,11 +766,26 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (generation != bootGeneration) return;
+                // Unambiguous states route straight into the wizard; ambiguous ones keep the
+                // classic page plus a deliberate "open the wizard" button (setupButton).
+                if (bridgeDispatchFailed) {
+                    String version = TermuxEnv.versionName(MainActivity.this);
+                    if (version == null) {
+                        showWizardStep1(null);
+                        return;
+                    }
+                    if (!TermuxEnv.isRecentEnough(MainActivity.this)) {
+                        showWizardStep1("检测到 Termux " + version
+                                + "：旧版（含 Play 商店版）不支持被外部应用拉起命令，"
+                                + "请先卸载它，再用向导安装 0.118+ 的版本。");
+                        return;
+                    }
+                }
                 String detail = bridgeDispatchFailed
-                        ? "没能让 Termux 执行 bridge。检查：Termux 是否已安装、"
-                        + "~/.termux/termux.properties 里 allow-external-apps 是否为 true、"
-                        + "以及 DSH 是否拿到了「在 Termux 中运行命令」权限。"
-                        : "后台服务没有在预期时间内就绪，可以点重试。";
+                        ? "没能让 Termux 执行 bridge。检查：~/.termux/termux.properties 里"
+                        + " allow-external-apps 是否为 true、以及 DSH 是否拿到了「在 Termux 中运行命令」"
+                        + "权限。第一次安装请点「打开安装向导」。"
+                        : "后台服务没有在预期时间内就绪，可以点重试。第一次安装请点「打开安装向导」。";
                 showStatus("DSH 没起来", detail, false);
             }
         });
@@ -773,6 +803,7 @@ public class MainActivity extends Activity {
                 showStatus("登录已失效", "后台服务正在用一个读不到的 token 运行。"
                         + "点「重新登录」重启它（会打断正在进行的对话）。", false);
                 retryButton.setVisibility(View.GONE);
+                setupButton.setVisibility(View.GONE);
             }
         });
     }
@@ -782,7 +813,15 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (generation != bootGeneration) return;
+                // Coming out of a fresh install: show the last-mile hint (API key) once
+                // before the web UI takes over.
+                if (pendingStep3) {
+                    pendingStep3 = false;
+                    showWizardStep3();
+                    return;
+                }
                 attachWebView();
+                web.setVisibility(View.VISIBLE);
                 showStatus("正在加载界面…", url, true);
                 web.loadUrl(url);
             }
@@ -879,7 +918,31 @@ public class MainActivity extends Activity {
         restartParams.topMargin = dp(8);
         splash.addView(restartButton, restartParams);
 
+        setupButton = new Button(this);
+        setupButton.setText("打开安装向导");
+        setupButton.setAllCaps(false);
+        setupButton.setVisibility(View.GONE);
+        setupButton.setTypeface(Typeface.DEFAULT);
+        setupButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // Ambiguous failure (bridge dispatched but no answer, or a permission that
+                // keeps failing): let the user walk the wizard deliberately.
+                showWizardStep2();
+            }
+        });
+        LinearLayout.LayoutParams setupParams =
+                new LinearLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.WRAP_CONTENT);
+        setupParams.topMargin = dp(8);
+        splash.addView(setupButton, setupParams);
+
+        wizard = new SetupWizard(this, wizardHost());
+        wizardView = (ScrollView) wizard.view();
+        wizardView.setVisibility(View.GONE);
+
         root.addView(splash, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(wizardView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
     }
@@ -1169,6 +1232,8 @@ public class MainActivity extends Activity {
         restartButton.setVisibility(busy ? View.GONE : View.VISIBLE);
         // The "open Termux" escape hatch only makes sense when we could not reach Termux.
         termuxButton.setVisibility(!busy && bridgeDispatchFailed ? View.VISIBLE : View.GONE);
+        setupButton.setVisibility(busy ? View.GONE : View.VISIBLE);
+        if (wizardView != null) wizardView.setVisibility(View.GONE);
         splash.setVisibility(View.VISIBLE);
         splash.bringToFront();
     }
@@ -1195,6 +1260,74 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             Toast.makeText(this, "打不开 Termux", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    // ---------------------------------------------------------------- setup wizard
+
+    private SetupWizard.Host wizardHost() {
+        return new SetupWizard.Host() {
+            @Override
+            public void recheck() {
+                if (wizard != null && wizard.currentStep() == 2) pendingStep3 = true;
+                beginBoot();
+            }
+
+            @Override
+            public void openTermuxApp() {
+                openTermux();
+            }
+
+            @Override
+            public void installTermuxBundled(Runnable onExtractionFailed) {
+                TermuxInstaller.installBundled(MainActivity.this, io, ui, onExtractionFailed);
+            }
+
+            @Override
+            public void openDownloadPage() {
+                TermuxInstaller.openFallbackInBrowser(MainActivity.this, 0);
+            }
+
+            @Override
+            public void copyToClipboard(String text) {
+                try {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("dsh-bootstrap", text));
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "复制失败，请长按命令框手动选择",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        };
+    }
+
+    private void showWizardStep1(String warning) {
+        if (wizard == null) return;
+        wizard.showStep1(warning);
+        showWizardView();
+    }
+
+    private void showWizardStep2() {
+        if (wizard == null) return;
+        wizard.showStep2();
+        showWizardView();
+    }
+
+    private void showWizardStep3() {
+        if (wizard == null) return;
+        wizard.showStep3();
+        showWizardView();
+    }
+
+    private void showWizardView() {
+        splash.setVisibility(View.GONE);
+        if (web != null) web.setVisibility(View.GONE);
+        wizardView.setVisibility(View.VISIBLE);
+        wizardView.bringToFront();
+    }
+
+    private void dismissWizard() {
+        if (wizardView != null) wizardView.setVisibility(View.GONE);
     }
 
     private int dp(int value) {

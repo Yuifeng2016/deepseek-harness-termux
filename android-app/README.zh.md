@@ -321,18 +321,25 @@ extra，而且**每个候选都先验一次能不能真的读到一个字节**�
 ## 目录
 
 ```
-AndroidManifest.xml          权限、intent-filter（含 dshapp:// 回传 scheme）
+AndroidManifest.xml          权限、intent-filter（含 dshapp:// 回传 scheme）、FileProvider 式自建 provider
 res/                         图标（mipmap + 自适应图标）、主题、network security config
 src/com/mermergi/dsh/
-    MainActivity.java        全部逻辑：WebView 壳 + 启动编排
+    MainActivity.java        全部逻辑：WebView 壳 + 启动编排 + 向导接线
+    SetupWizard.java         安装向导三步屏（装 Termux / 一条命令 / 首次提示）
+    TermuxEnv.java           Termux 装没装、版本多新（<0.118 = Play 旧版，拦截）
+    TermuxInstaller.java     从 assets 解出 Termux APK → 系统安装器；镜像兜底
+    ApkProvider.java         自建迷你 ContentProvider（无 androidx，替 FileProvider）
 termux/
     bridge.sh                RUN_COMMAND 的入口，装到 ~/.dsh-app/bridge.sh
     ensure-server.mjs        确保 dsh web 在跑，输出可用的 token URL
     handoff.mjs              一次性端点，把 URL 交给 App
 tools/
-    build.sh                 编译 + 签名，一条命令
+    build.sh                 编译 + 签名 + 取 Termux 安装包，一条命令
     make-icon.mjs            用 sharp 从 SVG 渲染整套图标
     android.jar              API 35 platform（从 Google 官方 zip 里取的）
+    cache/                   Termux 安装包缓存（build.sh 下载，gitignored）
+assets/
+    termux.apk               内置的 Termux 0.118.3 安装包（build.sh 复制进来，gitignored）
 install.sh                   装 Termux 那一半，并打开 allow-external-apps
 ```
 
@@ -340,7 +347,7 @@ install.sh                   装 Termux 那一半，并打开 allow-external-app
 
 ```sh
 cd ~/deepseek-harness-termux/android-app/tools
-bash build.sh              # → ../out/dsh.apk
+bash build.sh              # → ../out/dsh.apk（约 114MB：客户端 + 内置 Termux 包）
 bash build.sh --install    # 顺便把 APK 交给系统安装器
 ```
 
@@ -352,9 +359,17 @@ curl -fsSL -o "$TMPDIR/p.zip" https://dl.google.com/android/repository/platform-
 unzip -o -j "$TMPDIR/p.zip" android-35/android.jar -d tools/
 ```
 
+**Termux 安装包**：`build.sh` 先找 `tools/cache/com.termux_1002.apk`，没有就从镜像下载
+（清华 TUNA 优先——f-droid.org 本体在抖动网络下会中途断流，实测；镜像 206 实测可用），
+复制到 `assets/` 后用写死的 SHA256（build.sh 里的 `TERMUX_APK_SHA256`）校验完整性。
+换 Termux 版本 = 换 URL 数组 + 换 hash，两处都在 build.sh 里。
+
 签名用 `keystore.jks`（口令 `dshlocal`，自签名，有效期 30 年；**没进仓库**，见 `.gitignore`）。
 **本机这份别删**——签名变了就没法覆盖安装，只能先卸载，而卸载会丢掉登录 cookie。
 所以在别处 clone 下来第一次构建时会自动生成一把新钥匙，那把钥匙签出来的包**不能**覆盖本机已装的这个。
+
+> **2026-09 教训**：本机那份 `keystore.jks` 曾被清理掉一次，重编后只能全机卸载重装。
+> 第一次成功构建后，把 `keystore.jks` 备份一份到仓库外（比如 `~/.dsh-app/backup/`）。
 
 ## 安装
 
@@ -374,20 +389,38 @@ bash ~/deepseek-harness-termux/android-app/tools/build.sh --install
 > `~/.dsh-app/env` 里放的是**给 dsh 服务的环境变量**，默认 `DSH_PERMISSION_MODE=danger-full-access`，
 > 和 `start_dsh.sh` 保持一致。想收回权限就改这里——代价是 shell 类工具会全部拒绝执行。
 
-### 在一台新手机上装
+### 在一台新手机上装（一键，v1.1 起）
 
-**APK 只是客户端（75 KB），DSH 本体在 Termux 里（约 271 MB），所以新手机不能只装 APK。**
-完整顺序：
+**Termux 安装包已内置在 DSH App 里**（约 114MB，Termux 0.118.3，F-Droid 包），所以新手机不需要自己去找 Termux。全程三个人工动作：
+
+1. **装 DSH App** —— 手机浏览器打开
+   [`android-app/prebuilt/dsh.apk`](https://github.com/Yuifeng2016/deepseek-harness-termux/raw/main/android-app/prebuilt/dsh.apk)
+   下载并安装。
+2. **在 App 里点「安装 Termux」** —— 向导从内置安装包把 Termux 交给系统安装器；系统若要求
+   「允许安装未知应用」，允许后回来再点一次。（内置包解出失败时还有浏览器下载页兜底。）
+3. **粘贴一条命令** —— 点向导「复制命令」→「打开 Termux」，长按粘贴并回车。这条命令
+   （仓库根目录的 [`bootstrap.sh`](../bootstrap.sh)）自动完成：
+   装依赖（nodejs/python/clang/make/ripgrep）→ clone 本仓库到 `~/deepseek-harness-termux` →
+   装 dsh `0.1.7-rc.2` + sharp-wasm32 → 打 18 处安卓补丁 → 装 bridge → 打开 allow-external-apps。
+
+回到 App 点「我已执行，检查」，等服务拉起就进 GUI；首次使用在 Settings → Models 里填一次
+DeepSeek API key。`bootstrap.sh` 幂等，中途断了重跑即可续上。
+
+<details>
+<summary>手动流程（不装 App、只要 Termux 侧）</summary>
 
 ```sh
-# 1. 装 Termux（F-Droid 版）和 Termux:API
+pkg update -y && pkg install -y curl
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/bootstrap.sh)
+# 等价于下面这串：
+# 1. 装 Termux（F-Droid 版 0.118+）
 # 2. 拿到仓库
 pkg install -y git
-git clone https://github.com/mermergi/deepseek-harness-termux
+git clone https://github.com/Yuifeng2016/deepseek-harness-termux
 cd deepseek-harness-termux
 
 # 3. Termux 那一半：node/python/clang/ripgrep + dsh + 安卓补丁
-bash install.sh --deps
+bash install.sh --deps --version 0.1.7-rc.2
 
 # 4. App 那一半：bridge 脚本 + allow-external-apps
 bash android-app/install.sh
@@ -395,6 +428,8 @@ bash android-app/install.sh
 # 5. 装 APK —— 用仓库里现成的，**不需要**构建工具链
 termux-open android-app/prebuilt/dsh.apk
 ```
+
+</details>
 
 然后打开 App，授权两个权限：RUN_COMMAND 的运行时弹窗、悬浮球的「显示在其他应用上层」。
 

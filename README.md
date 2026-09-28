@@ -1,5 +1,7 @@
 # deepseek-harness-termux
 
+> Forked from [mermergi/deepseek-harness-termux](https://github.com/mermergi/deepseek-harness-termux) (the origin of all tested patches and launch scripts); installer and app maintenance happens here.
+
 English | [中文](README.zh.md)
 
 Compatibility patches plus a one-tap launcher that get [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) running on **Android / Termux**.
@@ -60,7 +62,7 @@ node -e "require('sharp')(process.argv[1]).metadata().then(m => console.log(m.pa
 
 ```sh
 curl -fsSL -o install.sh \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/install.sh
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/install.sh
 bash install.sh --deps
 ```
 
@@ -102,7 +104,7 @@ Two things matter here:
 
 ```sh
 curl -fsSL -o ~/dsh/android-fix.mjs \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/android-fix.mjs
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/android-fix.mjs
 node ~/dsh/android-fix.mjs
 ```
 
@@ -131,7 +133,7 @@ Option A already sets this up; for a manual install, add it:
 ```sh
 mkdir -p ~/.shortcuts/tasks
 curl -fsSL -o ~/.shortcuts/tasks/start_dsh.sh \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/start_dsh.sh
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/start_dsh.sh
 chmod +x ~/.shortcuts/tasks/start_dsh.sh
 ```
 
@@ -154,11 +156,13 @@ Android Studio required:
 
 ```sh
 bash android-app/install.sh                    # the Termux half (bridge scripts + allow-external-apps)
-termux-open android-app/prebuilt/dsh.apk       # install the committed APK; no build toolchain needed
 ```
 
-The APK is only the client (75 KB) — dsh itself lives in Termux (~271 MB), so a fresh phone sets
-up the Termux side first. See [android-app/README.md](android-app/README.md#installing-on-a-fresh-phone).
+Since v1.1 the APK **bundles the Termux APK** (~114 MB, Termux 0.118.3) and ships with a setup
+wizard: on a fresh phone it installs Termux from its own assets, then guides you through one
+pasted command (`bootstrap.sh`) that does everything on the Termux side. Grab the APK from the
+[releases page](https://github.com/Yuifeng2016/deepseek-harness-termux/releases) — see
+[android-app/README.md](android-app/README.md#installing-on-a-fresh-phone-one-click-v11).
 
 - **Home-screen icon, full screen, no address bar**: a WebView shell; Back navigates the page
   first and only then leaves the app.

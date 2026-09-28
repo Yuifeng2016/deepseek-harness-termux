@@ -59,24 +59,51 @@ bash android-app/tools/build.sh --install
 (syncing the hand-off secret from `MainActivity.java`, the single source of truth), and turn on
 `allow-external-apps` in `~/.termux/termux.properties` followed by `termux-reload-settings`.
 
-## Installing on a fresh phone
+## Installing on a fresh phone (one-click, v1.1+)
 
-The APK is only the client (75 KB); dsh itself lives in Termux (~271 MB). A new phone therefore
-cannot get by with the APK alone:
+**The Termux APK is bundled inside the DSH app** (~114 MB, Termux 0.118.3 from F-Droid), so a
+fresh phone never needs to hunt for Termux. Three manual actions total:
+
+1. **Install the DSH app** — on the phone, download
+   [`android-app/prebuilt/dsh.apk`](https://github.com/Yuifeng2016/deepseek-harness-termux/releases)
+   from the GitHub releases page and install it.
+2. **Tap "安装 Termux" in the app** — the setup wizard extracts the bundled APK and hands it to
+   the system installer; if Android asks for "install unknown apps", allow it and tap again.
+   A browser download page is the fallback if extraction fails.
+3. **Paste one command** — the wizard's "复制命令" copies the bootstrap line; open Termux,
+   paste, enter. It runs [`bootstrap.sh`](../bootstrap.sh), which installs the toolchain
+   (nodejs/python/clang/make/ripgrep), clones this repo, installs dsh `0.1.7-rc.2` with
+   sharp-wasm32, applies the 18 Android patches, sets up the bridge, and turns on
+   `allow-external-apps`.
+
+Back in the app, tap "我已执行，检查"; once the server is up the web UI loads. First visit:
+enter your DeepSeek API key in Settings → Models. `bootstrap.sh` is idempotent — re-run it
+after any interrupted step.
+
+<details>
+<summary>Manual flow (Termux side only, without the app)</summary>
+
+```sh
+pkg update -y && pkg install -y curl
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/bootstrap.sh)
+```
+
+or step by step:
 
 ```sh
 pkg install -y git
-git clone https://github.com/mermergi/deepseek-harness-termux
+git clone https://github.com/Yuifeng2016/deepseek-harness-termux
 cd deepseek-harness-termux
-bash install.sh --deps              # node/python/clang/ripgrep + dsh + the Android patches
-bash android-app/install.sh         # bridge scripts + allow-external-apps
-termux-open android-app/prebuilt/dsh.apk
+bash install.sh --deps --version 0.1.7-rc.2   # node/python/clang/ripgrep + dsh + the Android patches
+bash android-app/install.sh                    # bridge scripts + allow-external-apps
 ```
 
-The last step uses the committed `prebuilt/dsh.apk`, so the 237 MB build toolchain
-(openjdk-17/d8/aapt2) is only needed if you intend to rebuild from source. `build.sh` refreshes
-that committed copy after every successful build, so seeing it in `git status` means source and
-prebuilt have moved apart.
+</details>
+
+Note on distribution: since v1.1 the APK embeds the 114 MB Termux package, which exceeds
+GitHub's 100 MB file limit — the installable APK is therefore published as a **GitHub Release
+asset** instead of a tracked file. `tools/build.sh` still refreshes `prebuilt/dsh.apk` locally
+after every build.
 
 ## Xiaomi Super Island (status bar only — closed)
 

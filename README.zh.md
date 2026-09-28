@@ -1,5 +1,7 @@
 # deepseek-harness-termux
 
+> 本仓库 fork 自 [mermergi/deepseek-harness-termux](https://github.com/mermergi/deepseek-harness-termux)（实测补丁与启动脚本的全部出处），安装器与 App 相关的后续维护在这里进行。
+
 [English](README.md) | 中文
 
 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）在 **Android / Termux** 上跑起来的兼容补丁 + 一键启动脚本。
@@ -60,7 +62,7 @@ node -e "require('sharp')(process.argv[1]).metadata().then(m => console.log(m.pa
 
 ```sh
 curl -fsSL -o install.sh \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/install.sh
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/install.sh
 bash install.sh --deps
 ```
 
@@ -102,7 +104,7 @@ npm install @img/sharp-wasm32 sharp
 
 ```sh
 curl -fsSL -o ~/dsh/android-fix.mjs \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/android-fix.mjs
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/android-fix.mjs
 node ~/dsh/android-fix.mjs
 ```
 
@@ -131,7 +133,7 @@ node ~/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js web
 ```sh
 mkdir -p ~/.shortcuts/tasks
 curl -fsSL -o ~/.shortcuts/tasks/start_dsh.sh \
-  https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main/start_dsh.sh
+  https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main/start_dsh.sh
 chmod +x ~/.shortcuts/tasks/start_dsh.sh
 ```
 
@@ -153,13 +155,15 @@ chmod +x ~/.shortcuts/tasks/start_dsh.sh
 
 ```sh
 bash android-app/install.sh                    # Termux 那一半（bridge 脚本 + allow-external-apps）
-termux-open android-app/prebuilt/dsh.apk       # 装现成的 APK，不需要构建工具链
 # 想自己改代码重编才需要：pkg install aapt2 apksigner d8 openjdk-17
 # bash android-app/tools/build.sh --install
 ```
 
-**APK 只是客户端（75 KB），DSH 本体在 Termux 里（约 271 MB）**，所以一台新手机是
-「先装 Termux 侧、再装 APK」，完整顺序见 [android-app/README.zh.md](android-app/README.zh.md#在一台新手机上装)。
+**v1.1 起 APK 内置了 Termux 安装包（约 114MB，Termux 0.118.3）并带安装向导**：在一台新手机上
+装这一个 APK，向导会用内置包装 Termux，再引导你粘贴一条 `bootstrap.sh` 命令装齐 Termux 侧的一切。
+APK 从 [Releases 页面](https://github.com/Yuifeng2016/deepseek-harness-termux/releases) 下载
+（超过 GitHub 100MB 单文件限制，不再随仓库直出），完整流程见
+[android-app/README.zh.md](android-app/README.zh.md#在一台新手机上装一键v11-起)。
 
 - **桌面图标、全屏、没有地址栏**：WebView 壳，返回键先在页面内后退。
 - **点图标自动起服务**：通过 Termux 的 `RUN_COMMAND` 调 `~/.dsh-app/bridge.sh`，

@@ -9,10 +9,10 @@
 #   bash install.sh --dir ~/foo          # 自定义安装目录
 #   bash install.sh --version 0.1.5-rc.1 # 固定版本（便于复现）
 #
-# 仓库：https://github.com/mermergi/deepseek-harness-termux
+# 仓库：https://github.com/Yuifeng2016/deepseek-harness-termux
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/mermergi/deepseek-harness-termux/main"
+REPO_RAW="https://raw.githubusercontent.com/Yuifeng2016/deepseek-harness-termux/main"
 DIR="$HOME/dsh"
 DSH_VERSION=""
 INSTALL_DEPS=0

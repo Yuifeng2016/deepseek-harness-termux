@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.mermergi.dsh"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- The setup wizard sideloads the bundled Termux APK through the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- The floating work-status bubble; granted from a system settings screen, not a dialog. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Drives the Xiaomi Super Island notification that shows the work state. -->
@@ -28,6 +30,13 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
         android:allowBackup="false">
+
+        <!-- Serves the extracted bundled Termux APK to the system installer. -->
+        <provider
+            android:name=".ApkProvider"
+            android:authorities="com.mermergi.dsh.apk"
+            android:exported="true"
+            android:grantUriPermissions="true" />
 
         <activity
             android:name=".MainActivity"
