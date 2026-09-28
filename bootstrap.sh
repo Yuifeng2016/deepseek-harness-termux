@@ -63,23 +63,36 @@ if [ -d "$CLONE_DIR/.git" ]; then
         *) warn "origin 指向 $cur_url，改指到 $REPO_URL"; git -C "$CLONE_DIR" remote set-url origin "$REPO_URL" ;;
     esac
     pull_ok=0
-    for i in 1 2 3; do
-        if git -C "$CLONE_DIR" fetch origin main >/dev/null 2>&1 \
-           && git -C "$CLONE_DIR" merge --ff-only FETCH_HEAD >/dev/null 2>&1; then
-            pull_ok=1; break
-        fi
-        warn "更新失败（第 $i 次），重试…"; sleep 5
+    # fetch 依次尝试直连与代理前缀，哪个通走哪个（不动 origin 配置）。
+    for u in "$REPO_URL" "https://ghfast.top/$REPO_URL" "https://gh-proxy.com/$REPO_URL"; do
+        for i in 1 2; do
+            if git -C "$CLONE_DIR" fetch "$u" main >/dev/null 2>&1 \
+               && git -C "$CLONE_DIR" merge --ff-only FETCH_HEAD >/dev/null 2>&1; then
+                pull_ok=1; break 2
+            fi
+            warn "更新失败（$u 第 $i 次）…"; sleep 3
+        done
     done
-    [ "$pull_ok" = 1 ] || die "仓库快进更新失败（本地有改动？）。处理后重跑，或 CLONE_DIR=/tmp/... 换个位置。"
+    [ "$pull_ok" = 1 ] || die "仓库快进更新失败（本地有改动？）。处理后重跑，或 CLONE_DIR=... 换个位置。"
 else
     say "clone 仓库到 $CLONE_DIR"
+    # 直连失败时逐个尝试国内可达的 GitHub 代理前缀（代理时好时坏，只作回退）。
+    CLONE_URLS="$REPO_URL
+https://ghfast.top/$REPO_URL
+https://gh-proxy.com/$REPO_URL"
     cloned=0
-    for i in 1 2 3; do
-        if git clone "$REPO_URL" "$CLONE_DIR" 2>&1; then cloned=1; break; fi
-        warn "clone 失败（第 $i 次），重试…"; sleep 5
-        rm -rf "$CLONE_DIR"
-    done
-    [ "$cloned" = 1 ] || die "clone 三次都失败，检查网络后重跑本脚本"
+    while IFS= read -r u; do
+        [ -n "$u" ] || continue
+        say "尝试 $u"
+        for i in 1 2; do
+            if git clone "$u" "$CLONE_DIR" 2>&1; then cloned=1; break 2; fi
+            warn "clone 失败（第 $i 次），重试…"; sleep 5
+            rm -rf "$CLONE_DIR"
+        done
+    done <<EOF2
+$CLONE_URLS
+EOF2
+    [ "$cloned" = 1 ] || die "clone 多次失败，检查网络后重跑本脚本（也可手动换 REPO_URL）"
 fi
 
 # ── 3. Termux 依赖 + dsh + 补丁 + 启动脚本（install.sh 幂等，可整体重试）──
