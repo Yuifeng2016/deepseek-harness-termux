@@ -99,6 +99,8 @@ public class MainActivity extends Activity {
     /** One retry per request: only a picker that answers OK with nothing is worth retrying. */
     private boolean pickerRetried;
     private volatile boolean bridgeDispatchFailed;
+    /** Whether this boot's bridge intent was actually handed to Termux (distinct from run). */
+    private volatile boolean lastBootDispatched;
     private volatile boolean permissionRequested;
     private volatile int bootGeneration;
     private boolean authRetried;
@@ -651,6 +653,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 boolean dispatched = dispatchTermuxBridge(restartServer);
+                lastBootDispatched = dispatched;
                 String handoff = pollHandoff(dispatched ? 60000L : 5000L, generation);
                 if (generation != bootGeneration) return;
                 if (handoff == null) {
@@ -780,6 +783,17 @@ public class MainActivity extends Activity {
                                 + "请先卸载它，再用向导安装 0.118+ 的版本。");
                         return;
                     }
+                }
+                // The intent reached Termux but the bridge never came up within the timeout:
+                // on a fresh install this is the allow-external-apps / bootstrap-not-run case
+                // (Termux error code 2). Send the user straight to the bootstrap step instead
+                // of a dead end — Termux keeps posting an error notification for every retry,
+                // so the wizard is also what stops the flood.
+                if (lastBootDispatched && TermuxEnv.versionName(MainActivity.this) != null) {
+                    showWizardStep2("Termux 收到了命令但没有执行。几乎总是因为还没有在 Termux 里"
+                            + "跑过下面的安装命令（它同时会打开 allow-external-apps）。"
+                            + "复制命令 → 打开 Termux → 粘贴回车，装完点「我已执行，检查」。");
+                    return;
                 }
                 String detail = bridgeDispatchFailed
                         ? "没能让 Termux 执行 bridge。检查：~/.termux/termux.properties 里"
@@ -928,7 +942,7 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 // Ambiguous failure (bridge dispatched but no answer, or a permission that
                 // keeps failing): let the user walk the wizard deliberately.
-                showWizardStep2();
+                showWizardStep2(null);
             }
         });
         LinearLayout.LayoutParams setupParams =
@@ -1269,6 +1283,8 @@ public class MainActivity extends Activity {
             @Override
             public void recheck() {
                 if (wizard != null && wizard.currentStep() == 2) pendingStep3 = true;
+                // The user claims the Termux side is fixed now: re-arm the pollers and boot.
+                BridgeGate.clear();
                 beginBoot();
             }
 
@@ -1307,9 +1323,9 @@ public class MainActivity extends Activity {
         showWizardView();
     }
 
-    private void showWizardStep2() {
+    private void showWizardStep2(String warning) {
         if (wizard == null) return;
-        wizard.showStep2();
+        wizard.showStep2(warning);
         showWizardView();
     }
 

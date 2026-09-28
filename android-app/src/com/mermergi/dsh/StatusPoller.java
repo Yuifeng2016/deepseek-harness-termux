@@ -34,6 +34,12 @@ final class StatusPoller {
     private static final String KEY = "_Z2Fve3rcfvvahd4wDmLa0AvbxN061bp";
     private static final long INTERVAL_MS = 2000L;
     private static final long RETRY_DAEMON_EVERY = 6; // polls
+    /** Cycles before the first blind probe: the boot path's own dispatch gets a head start. */
+    private static final int BLIND_FIRST_CYCLE = 6;   // 12s
+    /** After a probe, this many cycles without the daemon = the bridge cannot be running. */
+    private static final int BLIND_PROBE_GRACE_CYCLES = 5; // 10s
+    /** Post-success restart nudges per streak before giving up until something answers. */
+    private static final int MAX_RESENDS_PER_STREAK = 5;
 
     private final Context context;
     private final Listener listener;
@@ -74,19 +80,45 @@ final class StatusPoller {
     private void loop() {
         boolean sawDaemon = false;
         int failures = 0;
+        // Blind-probe state: the daemon has never answered, so RUN_COMMANDs are shots in the
+        // dark (fresh phone without bootstrap → Termux rejects each one with error code 2 and
+        // posts a notification). Probe once after a grace delay, then trip the breaker instead
+        // of retrying forever — the v1.1 loop fired every 2s and buried the user in warnings.
+        int cycles = 0;
+        int blindProbes = 0;
+        int lastProbeCycle = -1000;
+        int sendsSinceDaemon = 0;
         while (running) {
             String body = null;
             try {
                 body = fetch();
                 sawDaemon = true;
                 failures = 0;
+                sendsSinceDaemon = 0;
+                BridgeGate.clear();
             } catch (Throwable ignored) {
                 failures += 1;
             }
+            cycles += 1;
             if (body == null) {
-                if (!sawDaemon || failures % RETRY_DAEMON_EVERY == 0) {
-                    // One attempt to (re)start the endpoint; a no-op when it is already up.
-                    TermuxRun.send(context, TermuxRun.BRIDGE_SCRIPT, "--status");
+                if (!sawDaemon) {
+                    if (blindProbes > 0 && cycles - lastProbeCycle >= BLIND_PROBE_GRACE_CYCLES) {
+                        // Probe(s) went out and the daemon still never answered: the bridge
+                        // cannot be executing at all. Go silent until something works.
+                        BridgeGate.markBroken();
+                    } else if (!BridgeGate.isBroken() && cycles >= BLIND_FIRST_CYCLE) {
+                        blindProbes += 1;
+                        lastProbeCycle = cycles;
+                        sendsSinceDaemon += 1;
+                        TermuxRun.send(context, TermuxRun.BRIDGE_SCRIPT, "--status");
+                    }
+                } else if (failures % RETRY_DAEMON_EVERY == 0) {
+                    // Daemon worked before; nudge it back up, but stop after a few fruitless
+                    // rounds in case the Termux side was broken (e.g. allow-external-apps off).
+                    if (sendsSinceDaemon < MAX_RESENDS_PER_STREAK && !BridgeGate.isBroken()) {
+                        sendsSinceDaemon += 1;
+                        TermuxRun.send(context, TermuxRun.BRIDGE_SCRIPT, "--status");
+                    }
                 }
                 post(StatusBubble.STATE_UNKNOWN);
             } else {
@@ -175,6 +207,10 @@ final class StatusPoller {
         } finally {
             if (connection != null) connection.disconnect();
         }
-        if (!up) TermuxRun.send(app, TermuxRun.BRIDGE_SCRIPT, "--status");
+        if (!up && !BridgeGate.isBroken()) {
+            TermuxRun.send(app, TermuxRun.BRIDGE_SCRIPT, "--status");
+        } else if (up) {
+            BridgeGate.clear();
+        }
     }
 }

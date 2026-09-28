@@ -126,13 +126,20 @@ final class SetupWizard {
 
     /** Termux present but the bridge is not answering: bootstrap not run / allow-external-apps off. */
     void showStep2() {
+        showStep2(null);
+    }
+
+    void showStep2(String warning) {
         step = 2;
         clear();
         title("第 2 步 · 一条命令装好 DSH");
         body("1. 点「复制命令」\n"
-                + "2. 点「打开 Termux」，长按粘贴并回车\n"
+                + "2. 点「打开 Termux」（首次启动先等它的基础包装完），长按粘贴并回车\n"
                 + "3. 会自动装齐 Node.js、编译工具、dsh 和补丁（约 500MB，首次 10-30 分钟）\n"
                 + "4. 期间保持 Termux 在前台并接上电源，装完回到这里点「我已执行，检查」");
+        if (warning != null) {
+            body(warning);
+        }
         commandBox(mirror ? BOOTSTRAP_COMMAND_MIRROR : BOOTSTRAP_COMMAND);
         primary("复制命令", new View.OnClickListener() {
             @Override
